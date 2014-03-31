@@ -28,77 +28,47 @@
  * @license     http://opensource.org/licenses/MIT MIT
  */
 
+App::uses('Permissions', 'Utils');
+App::uses('Url', 'Utils');
 
+class ApiController extends Controller {
+    public $helpers = array('Session', 'Permissions', 'Url');
 
-class ApiController extends AppController{
-    public $helpers = array('Cache');
+    public $components = array(
+        'Session',
+        'Auth'
+    );
 
-       
-    public function beforeFilter(){
-        parent::beforeFilter();
-        $this->Auth->allow(array('parties', 'questions', 'answers'));
-    }
+    protected $Permissions; 
+    
+    public function beforeFilter() {
+        // Enable Blowfish hashing with salt
+        $this->Auth->authenticate = array(
+            AuthComponent::ALL => array(
+                'userModel' => 'User',
+                'scope' => array(
+                        'User.approved' => 1,
+                        'User.deleted' => 0
+                )
+            ),
+            'Blowfish'
+        );
 
-    public function index(){
+        $this->Auth->authorize = 'Controller';
+        $this->Auth->allow(array('index', 'view', 'all', '/', 'info'));
+        $this->set("currentPage", "default");
+        $this->set("description_for_layout", "");
         
-    }
-      
-    public function questions($id = null){
-        $this->loadModel('Question');
-              
-        
-        if ($this->request->is('get'))
-        {            
-            $question = !isset($id) ? $this->Question->getQuestionsApi() : $this->Question->getQuestionsApi($id);
-            $isSingleObj = isset($id) ? true : false;
-            
-            if (empty($question)) {
-                throw new NotFoundException("Ogiltigt question");
-            }
-                 
-            return $this->renderJson($question, $isSingleObj);
-        }  
-        
-        throw new Exception("Bad request method");
-                   
+        $this->Permissions = new Permissions();
+        $this->Url = new Url();
     }
     
-    public function parties($id = null){
-        $this->loadModel('Party');
-              
-        if ($this->request->is('get'))
-        {            
-            $party = !isset($id) ? $this->Party->getPartiesApi() : $this->Party->getPartiesApi($id);
-            $isSingleObj = isset($id) ? true : false;
-            
-            if (empty($party)) {
-                throw new NotFoundException("Ogiltigt parti");
-            }
-                       
-            return $this->renderJson($party, $isSingleObj);
-        }  
-        
-        throw new Exception("Bad request method");
-                   
+    public function index() {
+        return $this->redirect(array('action' => 'info', 'version' => Configure::read('apiVersion')));
     }
-     
-    public function answers($id = null){
-        $this->loadModel('Answer');
-              
-        if ($this->request->is('get'))
-        {      
-            $answers = !isset($id) ? $this->Answer->getAnswersApi() : $this->Answer->getAnswersApi($id);
-            $isSingleObj = isset($id) ? true : false;
-            
-            if (empty($answers)) {
-                throw new NotFoundException("Ogiltigt svar");
-            }
-                      
-            return $this->renderJson($answers, $isSingleObj);
-        }  
-        
-        throw new Exception("Bad request method");
-                   
+    
+    public function info($version) {
+        $this->set('version', $version);
+        $this->render("/Api/$version/index"); 
     }
-}?>
-
+}

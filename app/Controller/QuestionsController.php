@@ -40,7 +40,7 @@ class QuestionsController extends AppController {
         "emptyAnswer" => "+999 days",
         "all" => "+999 days");
 
-    public $components = array('Session');
+    public $components = array('Session', 'Api');
 
     public function beforeRender() {
         parent::beforeRender();
@@ -49,7 +49,7 @@ class QuestionsController extends AppController {
 
     public function beforeFilter() {
         parent::beforeFilter();
-        $this->Auth->allow(array('search', 'getCategoryTable', 'getNumberOfQuestions', 'getQuestionsApi', 'emptyAnswer'));
+        $this->Auth->allow(array('search', 'getCategoryTable', 'getNumberOfQuestions', 'getQuestionsApi', 'emptyAnswer', 'api_index', 'api_view'));
     }
 
     public function  noDescription(){
@@ -85,7 +85,7 @@ class QuestionsController extends AppController {
         
         $popularQuestions = $this->Question->getPopularQuestions();
         
-        $questionIds = $this->Question->getIdsFromModel('Question', $popularQuestions);
+        $questionIds = $this->Question->getIdsFromModel('Question', $popularQuestions, 'question_id');
         $partyIds = $this->Party->getIdsFromModel('Party', $parties);
         
         $answersConditions = array('deleted' => false, 'partyId' => $partyIds, 'questionId' => $questionIds);
@@ -170,8 +170,12 @@ class QuestionsController extends AppController {
         if (empty($question)) {
             return $this->redirect(array('controller' => 'questions', 'action' => 'index'));
         }
-
+        
         $conditions = array('questionId' => $question['Question']['question_id'], 'includeParty' => true);
+        
+        if (!$this->Auth->loggedIn()) {
+            $conditions['approved'] = true;
+        }
         
         $answers = $this->Question->Answer->getAnswers($conditions);
         $description = $this->getDescriptionForQuestion($answers);
@@ -337,11 +341,11 @@ class QuestionsController extends AppController {
     public function isAuthorized($user) {
         $role = $user['Role']['name'];
         
-        if ($role == 'moderator' && in_array($this->action, array('edit', 'add', 'delete', 'status', 'addTags', 'notApproved', 'noDescription'))) {
+        if ($role == 'moderator' && in_array($this->action, array('edit', 'add', 'delete', 'status', 'addTags', 'notApproved', 'noDescription', 'newRevisions'))) {
             return true;
         }
 
-        if ($role == 'contributor' && in_array($this->action, array('edit', 'add', 'delete', 'status', 'notApproved', 'noDescription'))) {
+        if ($role == 'contributor' && in_array($this->action, array('edit', 'add', 'delete', 'status', 'notApproved', 'noDescription', 'newRevisions'))) {
             return true;
         }
         
@@ -465,6 +469,9 @@ class QuestionsController extends AppController {
             $this->render('/Elements/emptyAnswer');
         }
     }
+    
+    function api_index() { $this->Api->dispatch(); }
+    function api_view($args) { $this->Api->dispatch($args); }
     
     public function search($string) {
         $this->renderJson($this->Question->searchQuestion($string, $this->Permissions->isLoggedIn()), false);       

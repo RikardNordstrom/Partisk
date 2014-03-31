@@ -40,7 +40,9 @@ class Question extends AppModel {
 
     public $hasMany = array(
         'Answer' => array(
-            'className' => 'Answer'
+            'className' => 'Answer',
+            'foreignKey' => false,
+            'finderQuery' => 'select Answer.* from answers Answer where Answer.question_id in (select question_id from questions where id = {$__cakeID__$})'
         )
     );
 
@@ -93,29 +95,6 @@ class Question extends AppModel {
         return $result;
     }
 
-    
-    public function getQuestionsApi($id = null){
-        $result = Cache::read('questionsApi', 'question');
-        
-        if(!$result){
-            $this->recursive = -1; 
-
-            $conditions = array('deleted' => false, 'approved' => true);
-
-            if(isset($id)){
-                array_push($conditions, array('id' => $id));}
-
-            $result = $this->find('all', array(
-
-                'conditions' => $conditions,          
-                'fields' => array('question_id', 'title', 'type', 'description', 'created_date', 'updated_date')
-
-            ));
-            Cache::write('questionsApi', $result, 'question');
-        }
-        return Set::extract($result, "/Question/.");
-    }
-
     public function getQuestions($args) {
         $this->recursive = -1; 
 
@@ -140,11 +119,11 @@ class Question extends AppModel {
             array_push($joins, array(
                                 'table' => 'question_tags as QuestionTag',
                                 'conditions' => array('QuestionTag.tag_id' => $tagId,
-                                                      'Question.question_id = QuestionTag.question_id')
+                                                      'Question.id = QuestionTag.question_id')
                             ));
            } else {
             array_push($conditions, array(
-			      'Question.question_id not in (select question_id from question_tags inner join tags on tags.id = tag_id and tags.is_category = true where question_id = Question.id)')
+			      'Question.id not in (select question_id from question_tags inner join tags on tags.id = question_tags.tag_id and tags.is_category = true where question_tags.question_id = Question.id and Question.approved = true)')
                             );
 	   }
         }
@@ -157,7 +136,7 @@ class Question extends AppModel {
             'limit' => $limit,
 	    'group' => 'Question.question_id'
             ));
-
+        
         return $questions;
     }
     
@@ -214,19 +193,7 @@ class Question extends AppModel {
             
             if (!empty($question)) {
                 $this->Tag->recursive = -1;
-                $question['Tag'] = Set::extract('/Tag/.', $this->Tag->find('all', array(
-                        'joins' => array(
-                            array(
-                                'table' => 'question_tags as QuestionTag',
-                                'type' => 'inner',
-                                'conditions' => array(
-                                    'QuestionTag.question_id' => $question['Question']['id'],
-                                    'QuestionTag.tag_id = Tag.id'
-                                )
-                            )
-                        ),
-                        'fields' => 'Tag.*'
-                )));
+                $question['Tag'] = Set::extract('/Tag/.', $this->Tag->getQuestionTags($question['Question']['id']));
             }
             
             $result = $question;
@@ -287,7 +254,8 @@ class Question extends AppModel {
 
             $result = $this->getQuestions(array(
                     'conditions' => $conditions,
-                    'fields' => array('Question.question_id', 'Question.id', 'Question.title', 'Question.approved', 'Question.deleted')
+                    'fields' => array('Question.question_id', 'Question.id', 'Question.title', 'Question.approved', 'Question.deleted'),
+                    'groupBy' => 'Question.question_id'
                 ));
             
             Cache::write('all_questions_list_' . $loggedIn ? 'logged_in' : '', $result, 'question');
@@ -339,10 +307,6 @@ class Question extends AppModel {
        if (!$result) {
             $this->recursive = -1; 
          
-            if ($id === 'all') {
-                $result = $this->find('all', array(
-                    'conditions' => array('deleted' => false, 'approved' => true)));
-            } else {
 
                 $result = $this->find('all', array(
                     'conditions' => array('deleted' => false, 'approved' => true),
@@ -351,9 +315,9 @@ class Question extends AppModel {
                                     'conditions' => array('QuestionQuiz.quiz_id' => $id,
                                                           'Question.question_id = QuestionQuiz.question_id')
                                 )),
-                    'fields' => array('Question.*, QuestionQuiz.id')
+                    'fields' => array('Question.*, QuestionQuiz.id'),
+                    'group' => 'Question.question_id'
                 ));
-            }
            
           Cache::write('quiz_questions_by_quiz_' . $id, $result, 'question');
         }
@@ -450,7 +414,8 @@ class Question extends AppModel {
             $this->recursive = -1;
             $result = $this->find('all',array(
                 'conditions' => array(
-                    '!Question.deleted',               
+                    'Question.deleted' => false,
+                    'Question.approved' => true,
                     'Answer.id' => null,                
                     ),
                 'joins' => array(
@@ -459,7 +424,7 @@ class Question extends AppModel {
                         'type' => 'left',
                         'conditions' => array(
                             'Answer.question_id = Question.question_id',
-                            'Answer.party_id' => $partyId                        
+                            'Answer.party_id' => $partyId
                         )
                     )
                 ),
@@ -477,7 +442,7 @@ class Question extends AppModel {
             $result = $this->find('all', array(
                 'conditions' => array('Question.deleted' => false, 
                                       'Question.approved' => true),
-                'fields' => array('Question.id'),
+                'fields' => array('Question.question_id'),
                 'joins' => array(
                     array(
                         'table' => 'question_quizzes as QuestionQuiz',
@@ -500,9 +465,10 @@ class Question extends AppModel {
             'conditions' => array('Question.deleted' => false, 
                                   'Question.approved' => true,
                                   "Question.question_id not in (select question_id from question_quizzes as QuestionQuiz where quiz_id = $quizId)"),
-            'fields' => array('Question.question_id', 
+            'fields' => array('Question.question_id', 'Question.id',
                               'Question.title', '1 < (select count(distinct party_id) from answers where question_id = Question.question_id and approved) as multiple_answers'),
-            'order' => 'multiple_answers desc, Question.title'
+            'order' => 'multiple_answers desc, Question.title',
+            'group' => 'Question.question_id'
          )); 
         return $result;
     }
@@ -523,6 +489,18 @@ class Question extends AppModel {
 	     $result = $this->getQuestions(array('deleted' => false, 'approved' => true, 'tagId' => $id));
 	     
              Cache::write('visible_tag_questions_' . $id, $result, 'question');
+         }
+         
+         return $result;
+     }
+     
+    public function getTagQuestions($id) {
+         $result = Cache::read('tag_questions_' . $id, 'question');
+         if (!$result) {
+	     $result = $this->getQuestions(array('deleted' => false, 'approved' => true, 'tagId' => $id, 
+                 'fields' => array('id')));
+	     
+             Cache::write('tag_questions_' . $id, $result, 'question');
          }
          
          return $result;

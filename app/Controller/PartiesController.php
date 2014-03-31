@@ -39,7 +39,7 @@ class PartiesController extends AppController {
         "notAnswered" => "+999 days",
         "all" => "+999 days");
 
-    public $components = array('Session');
+    public $components = array('Session', 'Api');
 
     public function beforeRender() {
         parent::beforeRender();
@@ -48,7 +48,7 @@ class PartiesController extends AppController {
     
     public function beforeFilter() {
         parent::beforeFilter();
-        $this->Auth->allow(array('notAnswered','getPartiesApi'));
+        $this->Auth->allow(array('notAnswered','getPartiesApi', 'api_index', 'api_view'));
     }
 
     public function index() {        
@@ -76,11 +76,11 @@ class PartiesController extends AppController {
         } else {
             $questions = $this->Party->Answer->Question->getLoggedInQuestions();
         }
-                   
+        
         $questionIds = array();
 
         foreach ($questions as $question) {
-            array_push($questionIds, $question['Question']['id']);  
+            array_push($questionIds, $question['Question']['question_id']);  
         }
 
         $conditions = array('partyId' => $party['Party']['id'], 'questionId' => $questionIds, 'includeParty' => true, 
@@ -91,7 +91,7 @@ class PartiesController extends AppController {
         }
         
         $party["Answer"] = $this->Party->Answer->getAnswers($conditions);
-            
+
         $this->set('party', $party);
         $this->set('title_for_layout', ucfirst($party['Party']['name']));
         $this->set('description_for_layout', ucfirst($party['Party']['name']));
@@ -235,5 +235,8 @@ class PartiesController extends AppController {
         UserLogger::write(array('model' => 'party', 'action' => $action,
                                 'user_id' => $this->Auth->user('id'), 'object_id' => $object_id, 'text' => $text, 'ip' => $this->request->clientIp()));
     }
+    
+    function api_index() { $this->Api->dispatch(); }
+    function api_view($args) { $this->Api->dispatch($args); }
 }
 

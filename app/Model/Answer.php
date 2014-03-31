@@ -38,7 +38,7 @@ class Answer extends AppModel {
         ),
         'question_id' => array(
             'ruleEmpty' => array(
-                'rule' => 'numeric',
+                'rule' => array('notEmpty'),
                 'allowEmpty' => false,
                 'message' => 'Du måste välja en fråga')
         ),
@@ -118,41 +118,18 @@ class Answer extends AppModel {
         
         return $answersMatrix;
     }
-   
-    public function getAnswersApi($id = null){
-        $result = Cache::read('answersApi', 'answer');
-        
-        if (!$result) {
-            
-            $this->recursive = -1;
-            $conditions = array('deleted' => false, 'approved' => true);
-               
-            if(isset($id)){
-                array_push($conditions, array('id' => $id));}
-        
 
-            
-            $result = $this->find('all', array(
-                'conditions' => $conditions,
-                'fields' => array(
-                    'id', 
-                    'answer',                         
-                    'date', 
-                    'description', 
-                    'party_id', 
-                    'question_id',
-                    'created_date',
-                    'updated_date',
-                    'source')
-                )
-            );
+    public function getApiQuestionAnswers($id) {
+         $result = Cache::read('api_question_answers_' . $id, 'question');
+         if (!$result) {
         
-            Cache::write('answersApi', $result, 'answer');
-        }
-        
-        return Set::extract($result, "/Answer/.");
-    }
-
+	     $result = $this->getAnswers(array('questionId' => $id, 'includeParty' => false, 'approved' => true));
+	     
+             Cache::write('api_question_answers_' . $id, $result, 'question');
+         }
+         
+         return $result;
+     }
 
     public function getAnswers($args) {
         $tagId = isset($args['tagId']) ? $args['tagId'] : null;
@@ -199,7 +176,11 @@ class Answer extends AppModel {
         }
 
         if ($includeQuestion) {
-            array_push($contain, 'Question');
+            array_push($joins, array(
+                'type' => 'left',
+                'table' => 'questions as Question',
+                'conditions' => 'Answer.question_id = Question.question_id'
+            ));
             $order = 'Question.title';
             array_push($fields, 'Question.question_id, Question.title', 'Question.done');
         }
@@ -256,8 +237,19 @@ class Answer extends AppModel {
         $result = Cache::read('answer_' . $id, 'answer');
         if (!$result) {
             $this->recursive = 1;
-            $this->contain(array("CreatedBy", "UpdatedBy", 'ApprovedBy', 'Party', 'Question'));
-            $result = $this->findById($id);
+            $this->contain(array("CreatedBy", "UpdatedBy", 'ApprovedBy', 'Party'));
+            $result = $this->find('all', array(
+                'conditions' => 'Answer.id = ' . $id,
+                'joins' => array(
+                        array(
+                            'type' => 'left',
+                            'table' => 'questions as Question',
+                            'conditions' => 'Question.question_id = Answer.question_id'
+                        )
+                    ),
+                'fields' => 'Question.*, Answer.*, Party.*'
+            ));
+            $result = $result[0];
             
             $this->Question->recursive = -1;
             $this->contain();
@@ -265,8 +257,15 @@ class Answer extends AppModel {
                     'conditions' => array(
                         'Answer.deleted' => false,
                         'party_id' => $result['Party']['id'],
-                        'question_id' => $result['Answer']['question_id']),
+                        'Question.question_id' => $result['Answer']['question_id']),
                     'fields' => array('Answer.*'),
+                    'joins' => array(
+                            array(
+                                'type' => 'left',
+                                'table' => 'questions as Question',
+                                'conditions' => 'Question.question_id = Answer.question_id'
+                            )
+                        ),
                     'order' => 'Answer.date DESC'
                 )
             );
